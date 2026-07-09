@@ -13,7 +13,7 @@ pub fn disassembleChunk(chunk: Chunk, name: []const u8) void {
     }
 }
 
-fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
+pub fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
     std.debug.print("{:0>4} ", .{offset});
 
     if (offset > 0 and chunk.lines[offset] == chunk.lines[offset - 1]) {
@@ -36,7 +36,7 @@ fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
 }
 
 fn simpleInstruction(name: []const u8, offset: usize) usize {
-    std.debug.print("{s}", .{name});
+    std.debug.print("{s}\n", .{name});
     return offset + 1;
 }
 

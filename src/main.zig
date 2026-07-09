@@ -3,6 +3,7 @@ const Io = std.Io;
 
 const chunk = @import("chunk.zig");
 const debug = @import("debug.zig");
+const vm = @import("vm.zig");
 
 pub fn main(init: std.process.Init) !void {
     // Prints to stderr, unbuffered, ignoring potential errors.
@@ -17,11 +18,16 @@ pub fn main(init: std.process.Init) !void {
         std.log.info("arg: {s}", .{arg});
     }
 
+    vm.init();
+    defer vm.deinit();
+
     var c = try chunk.Chunk.init(init.gpa);
+    defer c.deinit();
+
     try c.writeConstant(1.2, 123);
     try c.writeLongConstant(2.4, 123);
     try c.writeChunk(chunk.OpCode.op_return.as_byte(), 123);
-    debug.disassembleChunk(c, "test chunk");
+    //debug.disassembleChunk(c, "test chunk");
 
-    c.deinit();
+    _ = vm.interpret(&c);
 }
