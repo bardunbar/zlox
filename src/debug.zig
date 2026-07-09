@@ -26,6 +26,9 @@ fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
         OpCode.op_constant => {
             return constantInstruction(@tagName(OpCode.op_constant), chunk, offset);
         },
+        OpCode.op_constant_long => {
+            return longConstantInstruction(@tagName(OpCode.op_constant_long), chunk, offset);
+        },
         OpCode.op_return => {
             return simpleInstruction(@tagName(OpCode.op_return), offset);
         },
@@ -38,8 +41,21 @@ fn simpleInstruction(name: []const u8, offset: usize) usize {
 }
 
 fn constantInstruction(name: []const u8, chunk: Chunk, offset: usize) usize {
-    const constant = chunk.code[offset + 1];
-    const constant_value = chunk.constants.data[constant];
-    std.debug.print("{s: <16} {:0>4} '{}'\n", .{ name, constant, constant_value });
+    const constant_idx = chunk.code[offset + 1];
+    const constant_value = chunk.constants.data[constant_idx];
+    std.debug.print("{s: <16} {:0>4} '{}'\n", .{ name, constant_idx, constant_value });
     return offset + 2;
+}
+
+fn longConstantInstruction(name: []const u8, chunk: Chunk, offset: usize) usize {
+    const idx_high = @as(usize, @intCast(chunk.code[offset + 1]));
+    const idx_middle = @as(usize, @intCast(chunk.code[offset + 2]));
+    const idx_low = @as(usize, @intCast(chunk.code[offset + 3]));
+
+    const idx = (idx_high << 8) + (idx_middle << 4) + idx_low;
+    const constant_value = chunk.constants.data[idx];
+
+    std.debug.print("{s: <16} {:0>4} '{}'\n", .{ name, idx, constant_value });
+
+    return offset + 4;
 }

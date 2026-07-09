@@ -18,9 +18,8 @@ pub fn main(init: std.process.Init) !void {
     }
 
     var c = try chunk.Chunk.init(init.gpa);
-    const constant = try c.addConstant(1.2);
-    try c.writeChunk(chunk.OpCode.op_constant.as_byte(), 123);
-    try c.writeChunk(constant, 123);
+    try c.writeConstant(1.2, 123);
+    try c.writeLongConstant(2.4, 123);
     try c.writeChunk(chunk.OpCode.op_return.as_byte(), 123);
     debug.disassembleChunk(c, "test chunk");
 

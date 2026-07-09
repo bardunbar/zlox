@@ -10,6 +10,7 @@ const ValueArray = Array(Value);
 
 pub const OpCode = enum(u8) {
     op_constant,
+    op_constant_long,
     op_return,
 
     pub fn as_byte(self: @This()) u8 {
@@ -58,7 +59,46 @@ pub const Chunk = struct {
         self.count += 1;
     }
 
-    pub fn addConstant(self: *@This(), value: Value) !u8 {
+    pub fn writeConstant(self: *@This(), value: Value, line: u32) !void {
+        const index = try addConstant(self, value);
+
+        // If the index fits in a u8 we can use a small constant
+        if (index < std.math.maxInt(u8)) {
+            const index_byte: u8 = @intCast(index);
+            try writeChunk(self, OpCode.op_constant.as_byte(), line);
+            try writeChunk(self, index_byte, line);
+        } else if (index < std.math.maxInt(u24)) { // Otherwise we have to use a large constant
+            const byte_low: u8 = @intCast(index & 0xF);
+            const byte_middle: u8 = @intCast((index & 0xF0) >> 4);
+            const byte_high: u8 = @intCast((index & 0xF00) >> 8);
+
+            try writeChunk(self, OpCode.op_constant_long.as_byte(), line);
+            try writeChunk(self, byte_high, line);
+            try writeChunk(self, byte_middle, line);
+            try writeChunk(self, byte_low, line);
+        } else {
+            return error.ContantIndexOverflow;
+        }
+    }
+
+    pub fn writeLongConstant(self: *@This(), value: Value, line: u32) !void {
+        const index = try addConstant(self, value);
+
+        if (index < std.math.maxInt(u24)) {
+            const byte_low: u8 = @intCast(index & 0xF);
+            const byte_middle: u8 = @intCast((index & 0xF0) >> 4);
+            const byte_high: u8 = @intCast((index & 0xF00) >> 8);
+
+            try writeChunk(self, OpCode.op_constant_long.as_byte(), line);
+            try writeChunk(self, byte_high, line);
+            try writeChunk(self, byte_middle, line);
+            try writeChunk(self, byte_low, line);
+        } else {
+            return error.ContantIndexOverflow;
+        }
+    }
+
+    pub fn addConstant(self: *@This(), value: Value) !usize {
         try self.constants.append(value);
         return @intCast(self.constants.count - 1);
     }
