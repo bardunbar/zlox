@@ -24,10 +24,20 @@ pub fn main(init: std.process.Init) !void {
     var c = try chunk.Chunk.init(init.gpa);
     defer c.deinit();
 
-    try c.writeConstant(1.2, 123);
-    try c.writeLongConstant(2.4, 123);
+    // 1 + 2 * 3 - 4 / -5 = 7.8
+    try c.writeConstant(1, 123);
+    try c.writeConstant(2, 123);
+    try c.writeConstant(3, 123);
+    try c.writeChunk(chunk.OpCode.op_multiply.as_byte(), 123);
+    try c.writeChunk(chunk.OpCode.op_add.as_byte(), 123);
+
+    try c.writeConstant(4, 123);
+    try c.writeConstant(5, 123);
+    try c.writeChunk(chunk.OpCode.op_negate.as_byte(), 123);
+    try c.writeChunk(chunk.OpCode.op_divide.as_byte(), 123);
+    try c.writeChunk(chunk.OpCode.op_subtract.as_byte(), 123);
+
     try c.writeChunk(chunk.OpCode.op_return.as_byte(), 123);
-    //debug.disassembleChunk(c, "test chunk");
 
     _ = vm.interpret(&c);
 }

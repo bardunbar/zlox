@@ -29,8 +29,14 @@ pub fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
         OpCode.op_constant_long => {
             return longConstantInstruction(@tagName(OpCode.op_constant_long), chunk, offset);
         },
-        OpCode.op_return => {
-            return simpleInstruction(@tagName(OpCode.op_return), offset);
+        OpCode.op_return,
+        OpCode.op_negate,
+        OpCode.op_add,
+        OpCode.op_subtract,
+        OpCode.op_multiply,
+        OpCode.op_divide,
+        => {
+            return simpleInstruction(@tagName(instruction), offset);
         },
     }
 }

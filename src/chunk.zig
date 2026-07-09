@@ -11,6 +11,11 @@ const ValueArray = Array(Value);
 pub const OpCode = enum(u8) {
     op_constant,
     op_constant_long,
+    op_add,
+    op_subtract,
+    op_multiply,
+    op_divide,
+    op_negate,
     op_return,
 
     pub fn as_byte(self: @This()) u8 {
