@@ -1,3 +1,5 @@
+const std = @import("std");
+
 pub const TokenType = enum {
     // Single Character Tokens
     left_paren,
@@ -82,6 +84,10 @@ pub fn nextToken() Token {
 
     const char = advance();
 
+    if (isAlpha(char)) {
+        return identifier();
+    }
+
     if (isDigit(char)) {
         return number();
     }
@@ -121,12 +127,10 @@ fn skipWhitespace() void {
         switch (c) {
             ' ', '\r', '\t' => {
                 _ = advance();
-                break;
             },
             '\n' => {
                 scanner.line += 1;
                 _ = advance();
-                break;
             },
             '/' => {
                 if (peekNext() == '/') {
@@ -142,6 +146,26 @@ fn skipWhitespace() void {
             }
         }
     }
+}
+
+fn checkKeyword(start: u32, rest: []const u8, kind: TokenType) TokenType {
+    if (comptime false) {
+        std.debug.print(
+            "CheckKeyword: {} ?= {} : {s} ?= {s}\n",
+            .{
+                scanner.current - scanner.start,
+                start + rest.len,
+                scanner.start[start .. rest.len + start],
+                rest,
+            },
+        );
+    }
+
+    if (scanner.current - scanner.start == start + rest.len and std.mem.eql(u8, scanner.start[start .. rest.len + start], rest)) {
+        return kind;
+    }
+
+    return TokenType.identifier;
 }
 
 fn peek() u8 {
@@ -177,6 +201,10 @@ fn isDigit(char: u8) bool {
     return char >= '0' and char <= '9';
 }
 
+fn isAlpha(char: u8) bool {
+    return (char >= 'a' and char <= 'z') or (char >= 'A' and char <= 'Z') or char == '_';
+}
+
 fn string() Token {
     while (peek() != '"' and !isAtEnd()) : (_ = advance()) {
         if (peek() == '\n') {
@@ -202,6 +230,49 @@ fn number() Token {
     }
 
     return makeToken(TokenType.number);
+}
+
+fn identifierType() TokenType {
+    switch (scanner.start[0]) {
+        'a' => return checkKeyword(1, "nd", TokenType.k_and),
+        'c' => return checkKeyword(1, "lass", TokenType.k_class),
+        'e' => return checkKeyword(1, "lse", TokenType.k_else),
+        'f' => {
+            if (scanner.current - scanner.start > 1) {
+                switch (scanner.start[1]) {
+                    'a' => return checkKeyword(2, "lse", TokenType.k_false),
+                    'o' => return checkKeyword(2, "r", TokenType.k_for),
+                    'u' => return checkKeyword(2, "n", TokenType.k_fun),
+                    else => {},
+                }
+            }
+        },
+        'i' => return checkKeyword(1, "f", TokenType.k_if),
+        'n' => return checkKeyword(1, "il", TokenType.k_nil),
+        'o' => return checkKeyword(1, "r", TokenType.k_or),
+        'p' => return checkKeyword(1, "rint", TokenType.k_print),
+        'r' => return checkKeyword(1, "eturn", TokenType.k_return),
+        't' => {
+            if (scanner.current - scanner.start > 1) {
+                switch (scanner.start[1]) {
+                    'h' => return checkKeyword(2, "is", TokenType.k_this),
+                    'r' => return checkKeyword(2, "ue", TokenType.k_true),
+                    else => {},
+                }
+            }
+        },
+        's' => return checkKeyword(1, "uper", TokenType.k_super),
+        'v' => return checkKeyword(1, "ar", TokenType.k_var),
+        'w' => return checkKeyword(1, "hile", TokenType.k_while),
+
+        else => {},
+    }
+    return TokenType.identifier;
+}
+
+fn identifier() Token {
+    while (isAlpha(peek()) or isDigit(peek())) : (_ = advance()) {}
+    return makeToken(identifierType());
 }
 
 fn makeToken(kind: TokenType) Token {
