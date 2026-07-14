@@ -194,7 +194,7 @@ fn match(expected: u8) bool {
 }
 
 fn isAtEnd() bool {
-    return scanner.current == scanner.source.ptr + scanner.source.len;
+    return scanner.current - scanner.source.ptr >= scanner.source.len;
 }
 
 fn isDigit(char: u8) bool {
