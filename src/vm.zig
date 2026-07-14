@@ -9,6 +9,8 @@ const OpCode = chunk_mod.OpCode;
 const value_mod = @import("value.zig");
 const Value = value_mod.Value;
 
+const compiler = @import("compiler.zig");
+
 var vm = VirtualMachine.init();
 
 const stack_max = 256;
@@ -27,6 +29,11 @@ const VirtualMachine = struct {
             .stack_top = 0,
         };
     }
+};
+
+pub const InterpretError = error{
+    InterpretCompileError,
+    InterpretRuntimeError,
 };
 
 pub const InterpretResult = enum {
@@ -71,16 +78,13 @@ fn readConstant(mode: enum { long, short }) Value {
     };
 }
 
-pub fn interpret(chunk: *Chunk) InterpretResult {
-    vm.chunk = chunk;
-    vm.ip = chunk.code.ptr;
-
-    return run();
+pub fn interpret(source: []const u8) InterpretError!void {
+    try compiler.compile(source);
 }
 
 const enable_debug_trace: bool = true;
 
-fn run() InterpretResult {
+fn run() InterpretError!void {
     while (true) {
         if (comptime enable_debug_trace) {
             std.debug.print("          ", .{});
@@ -97,7 +101,7 @@ fn run() InterpretResult {
         switch (instruction) {
             OpCode.op_return => {
                 std.debug.print("{}\n", .{pop()});
-                return InterpretResult.interpret_ok;
+                return;
             },
             OpCode.op_constant => {
                 push(readConstant(.short));
