@@ -13,6 +13,9 @@ const TokenType = scanner.TokenType;
 const value_mod = @import("value.zig");
 const Value = value_mod.Value;
 
+const common = @import("common.zig");
+const debug = @import("debug.zig");
+
 var parser: Parser = .{
     .current = undefined,
     .previous = undefined,
@@ -155,6 +158,12 @@ fn emitConstant(value: Value) !void {
 
 fn endCompiler() !void {
     try emitReturn();
+
+    if (comptime common.enable_print_code) {
+        if (!parser.had_error) {
+            debug.disassembleChunk(currentChunk().*, "code");
+        }
+    }
 }
 
 fn binary() !void {

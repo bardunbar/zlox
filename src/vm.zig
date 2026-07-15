@@ -11,6 +11,8 @@ const Value = value_mod.Value;
 
 const compiler = @import("compiler.zig");
 
+const common = @import("common.zig");
+
 var vm = VirtualMachine.init();
 
 const stack_max = 256;
@@ -96,16 +98,16 @@ pub fn interpret(source: []const u8) InterpretError!void {
     try run();
 }
 
-const enable_debug_trace: bool = true;
-
 fn run() InterpretError!void {
+    std.debug.print("== Run ==\n", .{});
+
     while (true) {
-        if (comptime enable_debug_trace) {
-            //std.debug.print("stack     ", .{});
-            //for (0..vm.stack_top) |i| {
-            //    std.debug.print("[ {} ]", .{vm.stack[i]});
-            //}
-            //std.debug.print("\n", .{});
+        if (comptime common.enable_debug_trace) {
+            std.debug.print("stack     ", .{});
+            for (0..vm.stack_top) |i| {
+                std.debug.print("[ {} ]", .{vm.stack[i]});
+            }
+            std.debug.print("\n", .{});
 
             _ = debug.disassembleInstruction(vm.chunk.*, vm.ip - vm.chunk.code.ptr);
         }
