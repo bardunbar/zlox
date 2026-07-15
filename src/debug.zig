@@ -49,7 +49,7 @@ fn simpleInstruction(name: []const u8, offset: usize) usize {
 fn constantInstruction(name: []const u8, chunk: Chunk, offset: usize) usize {
     const constant_idx = chunk.code[offset + 1];
     const constant_value = chunk.constants.data[constant_idx];
-    std.debug.print("{s: <16} {:0>4} '{}'\n", .{ name, constant_idx, constant_value });
+    std.debug.print("{s: <16} {:0>4} '{f}'\n", .{ name, constant_idx, constant_value });
     return offset + 2;
 }
 
@@ -61,7 +61,7 @@ fn longConstantInstruction(name: []const u8, chunk: Chunk, offset: usize) usize 
     const idx = (idx_high << 8) + (idx_middle << 4) + idx_low;
     const constant_value = chunk.constants.data[idx];
 
-    std.debug.print("{s: <16} {:0>4} '{}'\n", .{ name, idx, constant_value });
+    std.debug.print("{s: <16} {:0>4} '{f}'\n", .{ name, idx, constant_value });
 
     return offset + 4;
 }

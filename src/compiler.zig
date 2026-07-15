@@ -186,9 +186,9 @@ fn grouping() !void {
 }
 
 fn number() !void {
-    const value: Value = try std.fmt.parseFloat(Value, parser.previous.data);
-    // std.debug.print("Parsing number: {}\n", .{value});
-    try emitConstant(value);
+    const double = try std.fmt.parseFloat(f64, parser.previous.data);
+
+    try emitConstant(Value.fromNumber(double));
 }
 
 fn unary() !void {

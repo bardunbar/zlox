@@ -28,7 +28,7 @@ const VirtualMachine = struct {
         return .{
             .chunk = undefined,
             .ip = undefined,
-            .stack = std.mem.zeroes([256]Value),
+            .stack = [_]Value{Value.nil()} ** stack_max,
             .stack_top = 0,
             .allocator = undefined,
         };
@@ -48,10 +48,22 @@ pub const InterpretResult = enum {
 
 pub fn init(allocator: std.mem.Allocator) void {
     vm.allocator = allocator;
-    vm.stack_top = 0;
+    resetStack();
 }
 
 pub fn deinit() void {}
+
+fn resetStack() void {
+    vm.stack_top = 0;
+}
+
+pub fn runtimeError(comptime format: []const u8, args: anytype) void {
+    std.log.err(format, args);
+
+    const instruction = vm.ip - vm.chunk.code.ptr - 1;
+    const line = vm.chunk.lines[instruction];
+    std.log.err("[line {}] in script.", .{line});
+}
 
 pub fn push(value: Value) void {
     vm.stack[vm.stack_top] = value;
@@ -61,6 +73,10 @@ pub fn push(value: Value) void {
 pub fn pop() Value {
     vm.stack_top -= 1;
     return vm.stack[vm.stack_top];
+}
+
+pub fn peek(distance: usize) Value {
+    return vm.stack[vm.stack_top - 1 - distance];
 }
 
 fn readByte() u8 {
@@ -105,7 +121,7 @@ fn run() InterpretError!void {
         if (comptime common.enable_debug_trace) {
             std.debug.print("stack     ", .{});
             for (0..vm.stack_top) |i| {
-                std.debug.print("[ {} ]", .{vm.stack[i]});
+                std.debug.print("[ {f} ]", .{vm.stack[i]});
             }
             std.debug.print("\n", .{});
 
@@ -126,27 +142,47 @@ fn run() InterpretError!void {
                 push(readConstant(.long));
             },
             OpCode.op_negate => {
-                push(-pop());
+                if (!Value.isNumber(peek(0))) {
+                    runtimeError("Operand must be a number.", .{});
+                    return InterpretError.InterpretRuntimeError;
+                }
+                push(Value.fromNumber(-pop().asNumber()));
             },
             OpCode.op_add => {
-                const b = pop();
-                const a = pop();
-                push(a + b);
+                if (!Value.isNumber(peek(0)) or !Value.isNumber(peek(1))) {
+                    runtimeError("Operands must be numbers.", .{});
+                    return InterpretError.InterpretRuntimeError;
+                }
+                const b = pop().asNumber();
+                const a = pop().asNumber();
+                push(Value.fromNumber(a + b));
             },
             OpCode.op_subtract => {
-                const b = pop();
-                const a = pop();
-                push(a - b);
+                if (!Value.isNumber(peek(0)) or !Value.isNumber(peek(1))) {
+                    runtimeError("Operands must be numbers.", .{});
+                    return InterpretError.InterpretRuntimeError;
+                }
+                const b = pop().asNumber();
+                const a = pop().asNumber();
+                push(Value.fromNumber(a - b));
             },
             OpCode.op_multiply => {
-                const b = pop();
-                const a = pop();
-                push(a * b);
+                if (!Value.isNumber(peek(0)) or !Value.isNumber(peek(1))) {
+                    runtimeError("Operands must be numbers.", .{});
+                    return InterpretError.InterpretRuntimeError;
+                }
+                const b = pop().asNumber();
+                const a = pop().asNumber();
+                push(Value.fromNumber(a * b));
             },
             OpCode.op_divide => {
-                const b = pop();
-                const a = pop();
-                push(a / b);
+                if (!Value.isNumber(peek(0)) or !Value.isNumber(peek(1))) {
+                    runtimeError("Operands must be numbers.", .{});
+                    return InterpretError.InterpretRuntimeError;
+                }
+                const b = pop().asNumber();
+                const a = pop().asNumber();
+                push(Value.fromNumber(a / b));
             },
         }
     }
