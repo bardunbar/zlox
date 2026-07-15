@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const TokenType = enum {
+pub const TokenType = enum(u8) {
     // Single Character Tokens
     left_paren,
     right_paren,

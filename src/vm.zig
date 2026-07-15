@@ -20,6 +20,7 @@ const VirtualMachine = struct {
     ip: [*]u8,
     stack: [stack_max]Value,
     stack_top: usize,
+    allocator: std.mem.Allocator,
 
     fn init() @This() {
         return .{
@@ -27,6 +28,7 @@ const VirtualMachine = struct {
             .ip = undefined,
             .stack = std.mem.zeroes([256]Value),
             .stack_top = 0,
+            .allocator = undefined,
         };
     }
 };
@@ -42,7 +44,8 @@ pub const InterpretResult = enum {
     interpret_runtime_error,
 };
 
-pub fn init() void {
+pub fn init(allocator: std.mem.Allocator) void {
+    vm.allocator = allocator;
     vm.stack_top = 0;
 }
 
@@ -79,7 +82,18 @@ fn readConstant(mode: enum { long, short }) Value {
 }
 
 pub fn interpret(source: []const u8) InterpretError!void {
-    try compiler.compile(source);
+    var chunk = Chunk.init(vm.allocator) catch |err| {
+        std.log.err("Memory error: {}\n", .{err});
+        return InterpretError.InterpretCompileError;
+    };
+    defer chunk.deinit();
+
+    try compiler.compile(source, &chunk);
+
+    vm.chunk = &chunk;
+    vm.ip = vm.chunk.code.ptr;
+
+    try run();
 }
 
 const enable_debug_trace: bool = true;
@@ -87,11 +101,11 @@ const enable_debug_trace: bool = true;
 fn run() InterpretError!void {
     while (true) {
         if (comptime enable_debug_trace) {
-            std.debug.print("          ", .{});
-            for (0..vm.stack_top) |i| {
-                std.debug.print("[ {} ]", .{vm.stack[i]});
-            }
-            std.debug.print("\n", .{});
+            //std.debug.print("stack     ", .{});
+            //for (0..vm.stack_top) |i| {
+            //    std.debug.print("[ {} ]", .{vm.stack[i]});
+            //}
+            //std.debug.print("\n", .{});
 
             _ = debug.disassembleInstruction(vm.chunk.*, vm.ip - vm.chunk.code.ptr);
         }
@@ -100,7 +114,7 @@ fn run() InterpretError!void {
 
         switch (instruction) {
             OpCode.op_return => {
-                std.debug.print("{}\n", .{pop()});
+                std.debug.print("result: {}\n", .{pop()});
                 return;
             },
             OpCode.op_constant => {
