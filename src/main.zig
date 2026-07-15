@@ -52,7 +52,6 @@ fn repl(io: std.Io) !void {
             if (comptime builtin.target.os.tag == .windows) {
                 line = line[0 .. line.len - 1];
             }
-            std.debug.print("{s}\n", .{line});
 
             vm.interpret(line) catch |err| {
                 std.log.err("Encountered error: {}", .{err});

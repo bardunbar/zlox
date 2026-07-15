@@ -35,6 +35,13 @@ pub fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
         OpCode.op_subtract,
         OpCode.op_multiply,
         OpCode.op_divide,
+        OpCode.op_nil,
+        OpCode.op_true,
+        OpCode.op_false,
+        OpCode.op_not,
+        OpCode.op_equal,
+        OpCode.op_greater,
+        OpCode.op_less,
         => {
             return simpleInstruction(@tagName(instruction), offset);
         },

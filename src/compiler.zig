@@ -65,31 +65,31 @@ const rules = std.enums.directEnumArray(TokenType, ParseRule, 0, .{
     .semicolon = .{},
     .slash = .{ .infix = binary, .precedence = Precedence.factor },
     .star = .{ .infix = binary, .precedence = Precedence.factor },
-    .bang = .{},
-    .bang_equal = .{},
+    .bang = .{ .prefix = unary },
+    .bang_equal = .{ .infix = binary, .precedence = Precedence.equality },
     .equal = .{},
-    .equal_equal = .{},
-    .greater = .{},
-    .greater_equal = .{},
-    .less = .{},
-    .less_equal = .{},
+    .equal_equal = .{ .infix = binary, .precedence = Precedence.equality },
+    .greater = .{ .infix = binary, .precedence = Precedence.comparison },
+    .greater_equal = .{ .infix = binary, .precedence = Precedence.comparison },
+    .less = .{ .infix = binary, .precedence = Precedence.comparison },
+    .less_equal = .{ .infix = binary, .precedence = Precedence.comparison },
     .identifier = .{},
     .string = .{},
     .number = .{ .prefix = number },
     .k_and = .{},
     .k_class = .{},
     .k_else = .{},
-    .k_false = .{},
+    .k_false = .{ .prefix = literal },
     .k_for = .{},
     .k_fun = .{},
     .k_if = .{},
-    .k_nil = .{},
+    .k_nil = .{ .prefix = literal },
     .k_or = .{},
     .k_print = .{},
     .k_return = .{},
     .k_super = .{},
     .k_this = .{},
-    .k_true = .{},
+    .k_true = .{ .prefix = literal },
     .k_var = .{},
     .k_while = .{},
     .k_error = .{},
@@ -142,7 +142,12 @@ fn emitByte(byte: u8) !void {
     try currentChunk().writeChunk(byte, parser.previous.line);
 }
 
-fn emitBytes(bytes: []const u8) !void {
+fn emitBytes(a: u8, b: u8) !void {
+    try emitByte(a);
+    try emitByte(b);
+}
+
+fn emitByteArray(bytes: []const u8) !void {
     for (bytes) |byte| {
         try emitByte(byte);
     }
@@ -172,10 +177,25 @@ fn binary() !void {
     parsePrecedence(@enumFromInt(@intFromEnum(rule.precedence) + 1));
 
     switch (operator_type) {
+        TokenType.bang_equal => try emitBytes(OpCode.op_equal.as_byte(), OpCode.op_not.as_byte()),
+        TokenType.equal_equal => try emitByte(OpCode.op_equal.as_byte()),
+        TokenType.greater => try emitByte(OpCode.op_greater.as_byte()),
+        TokenType.greater_equal => try emitBytes(OpCode.op_less.as_byte(), OpCode.op_not.as_byte()),
+        TokenType.less => try emitByte(OpCode.op_less.as_byte()),
+        TokenType.less_equal => try emitBytes(OpCode.op_greater.as_byte(), OpCode.op_not.as_byte()),
         TokenType.plus => try emitByte(OpCode.op_add.as_byte()),
         TokenType.minus => try emitByte(OpCode.op_subtract.as_byte()),
         TokenType.star => try emitByte(OpCode.op_multiply.as_byte()),
         TokenType.slash => try emitByte(OpCode.op_divide.as_byte()),
+        else => unreachable,
+    }
+}
+
+fn literal() !void {
+    switch (parser.previous.kind) {
+        TokenType.k_false => try emitByte(OpCode.op_false.as_byte()),
+        TokenType.k_nil => try emitByte(OpCode.op_nil.as_byte()),
+        TokenType.k_true => try emitByte(OpCode.op_true.as_byte()),
         else => unreachable,
     }
 }
@@ -198,13 +218,14 @@ fn unary() !void {
 
     switch (token_kind) {
         TokenType.minus => try emitByte(OpCode.op_negate.as_byte()),
+        TokenType.bang => try emitByte(OpCode.op_not.as_byte()),
         else => unreachable,
     }
 }
 
 fn parsePrecedence(precedence: Precedence) void {
     advance();
-    //std.debug.print("Parsing Precedence: {s}\n", .{@tagName(parser.previous.kind)});
+    // std.debug.print("Parsing Precedence: {s}\n", .{@tagName(parser.previous.kind)});
 
     const prefix_option = getRule(parser.previous.kind).prefix;
     if (prefix_option) |prefix| {

@@ -45,6 +45,22 @@ pub const Value = union(ValueType) {
         return .val_nil;
     }
 
+    pub fn eq(lhs: Value, rhs: Value) bool {
+        if (std.meta.activeTag(lhs) != std.meta.activeTag(rhs)) {
+            return false;
+        }
+
+        switch (std.meta.activeTag(lhs)) {
+            ValueType.val_nil => return true,
+            ValueType.val_bool => return lhs.asBool() == rhs.asBool(),
+            ValueType.val_number => return lhs.asNumber() == rhs.asNumber(),
+        }
+    }
+
+    pub fn isFalsey(self: @This()) bool {
+        return self.isNil() or (self.isBool() and !self.asBool());
+    }
+
     pub fn format(self: Value, writer: anytype) !void {
         switch (self) {
             .val_number => |n| try writer.print("{}", .{n}),

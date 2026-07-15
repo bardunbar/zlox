@@ -132,7 +132,7 @@ fn run() InterpretError!void {
 
         switch (instruction) {
             OpCode.op_return => {
-                std.debug.print("result: {}\n", .{pop()});
+                std.debug.print("result: {f}\n", .{pop()});
                 return;
             },
             OpCode.op_constant => {
@@ -141,12 +141,45 @@ fn run() InterpretError!void {
             OpCode.op_constant_long => {
                 push(readConstant(.long));
             },
+            OpCode.op_nil => {
+                push(Value.nil());
+            },
+            OpCode.op_true => {
+                push(Value.fromBool(true));
+            },
+            OpCode.op_false => {
+                push(Value.fromBool(false));
+            },
+            OpCode.op_equal => {
+                const b = pop();
+                const a = pop();
+
+                push(Value.fromBool(Value.eq(a, b)));
+            },
             OpCode.op_negate => {
                 if (!Value.isNumber(peek(0))) {
                     runtimeError("Operand must be a number.", .{});
                     return InterpretError.InterpretRuntimeError;
                 }
                 push(Value.fromNumber(-pop().asNumber()));
+            },
+            OpCode.op_greater => {
+                if (!Value.isNumber(peek(0)) or !Value.isNumber(peek(1))) {
+                    runtimeError("Operands must be numbers.", .{});
+                    return InterpretError.InterpretRuntimeError;
+                }
+                const b = pop().asNumber();
+                const a = pop().asNumber();
+                push(Value.fromBool(a > b));
+            },
+            OpCode.op_less => {
+                if (!Value.isNumber(peek(0)) or !Value.isNumber(peek(1))) {
+                    runtimeError("Operands must be numbers.", .{});
+                    return InterpretError.InterpretRuntimeError;
+                }
+                const b = pop().asNumber();
+                const a = pop().asNumber();
+                push(Value.fromBool(a < b));
             },
             OpCode.op_add => {
                 if (!Value.isNumber(peek(0)) or !Value.isNumber(peek(1))) {
@@ -184,6 +217,9 @@ fn run() InterpretError!void {
                 const a = pop().asNumber();
                 push(Value.fromNumber(a / b));
             },
+            OpCode.op_not => {
+                push(Value.fromBool(pop().isFalsey()));
+            }
         }
     }
 }
