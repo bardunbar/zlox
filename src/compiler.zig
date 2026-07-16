@@ -13,6 +13,12 @@ const TokenType = scanner.TokenType;
 const value_mod = @import("value.zig");
 const Value = value_mod.Value;
 
+const object_mod = @import("object.zig");
+const Object = object_mod.Object;
+const ObjectString = object_mod.ObjectString;
+
+const memory = @import("memory.zig");
+
 const common = @import("common.zig");
 const debug = @import("debug.zig");
 
@@ -74,7 +80,7 @@ const rules = std.enums.directEnumArray(TokenType, ParseRule, 0, .{
     .less = .{ .infix = binary, .precedence = Precedence.comparison },
     .less_equal = .{ .infix = binary, .precedence = Precedence.comparison },
     .identifier = .{},
-    .string = .{},
+    .string = .{ .prefix = string },
     .number = .{ .prefix = number },
     .k_and = .{},
     .k_class = .{},
@@ -209,6 +215,11 @@ fn number() !void {
     const double = try std.fmt.parseFloat(f64, parser.previous.data);
 
     try emitConstant(Value.fromNumber(double));
+}
+
+fn string() !void {
+    const object = try vm.manager().copy(parser.previous.data[1 .. parser.previous.data.len - 1]);
+    try emitConstant(Value.fromObject(object));
 }
 
 fn unary() !void {

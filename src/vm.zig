@@ -9,11 +9,17 @@ const OpCode = chunk_mod.OpCode;
 const value_mod = @import("value.zig");
 const Value = value_mod.Value;
 
+const object_mod = @import("object.zig");
+const Object = object_mod.Object;
+const ObjectString = object_mod.ObjectString;
+
 const compiler = @import("compiler.zig");
+
+const memory = @import("memory.zig");
 
 const common = @import("common.zig");
 
-var vm = VirtualMachine.init();
+var vm: VirtualMachine = undefined;
 
 const stack_max = 256;
 
@@ -22,16 +28,20 @@ const VirtualMachine = struct {
     ip: [*]u8,
     stack: [stack_max]Value,
     stack_top: usize,
-    allocator: std.mem.Allocator,
+    manager: memory.Manager,
 
-    fn init() @This() {
+    fn init(allocator: std.mem.Allocator) @This() {
         return .{
             .chunk = undefined,
             .ip = undefined,
-            .stack = [_]Value{Value.nil()} ** stack_max,
+            .stack = [_]Value{Value.fromNil()} ** stack_max,
             .stack_top = 0,
-            .allocator = undefined,
+            .manager = memory.Manager.init(allocator),
         };
+    }
+
+    fn deinit(self: *@This()) void {
+        self.manager.deinit();
     }
 };
 
@@ -47,11 +57,17 @@ pub const InterpretResult = enum {
 };
 
 pub fn init(allocator: std.mem.Allocator) void {
-    vm.allocator = allocator;
+    vm = VirtualMachine.init(allocator);
     resetStack();
 }
 
-pub fn deinit() void {}
+pub fn deinit() void {
+    vm.deinit();
+}
+
+pub fn manager() *memory.Manager {
+    return &vm.manager;
+}
 
 fn resetStack() void {
     vm.stack_top = 0;
@@ -99,8 +115,16 @@ fn readConstant(mode: enum { long, short }) Value {
     };
 }
 
+pub fn concatenate() !void {
+    const b = pop().asString();
+    const a = pop().asString();
+
+    const object = try vm.manager.concat(a.chars, b.chars);
+    push(Value.fromObject(object));
+}
+
 pub fn interpret(source: []const u8) InterpretError!void {
-    var chunk = Chunk.init(vm.allocator) catch |err| {
+    var chunk = Chunk.init(vm.manager.allocator) catch |err| {
         std.log.err("Memory error: {}\n", .{err});
         return InterpretError.InterpretCompileError;
     };
@@ -142,7 +166,7 @@ fn run() InterpretError!void {
                 push(readConstant(.long));
             },
             OpCode.op_nil => {
-                push(Value.nil());
+                push(Value.fromNil());
             },
             OpCode.op_true => {
                 push(Value.fromBool(true));
@@ -182,13 +206,19 @@ fn run() InterpretError!void {
                 push(Value.fromBool(a < b));
             },
             OpCode.op_add => {
-                if (!Value.isNumber(peek(0)) or !Value.isNumber(peek(1))) {
+                if (Value.isString(peek(0)) and Value.isString(peek(1))) {
+                    concatenate() catch |err| {
+                        runtimeError("{}", .{err});
+                        return InterpretError.InterpretRuntimeError;
+                    };
+                } else if (Value.isNumber(peek(0)) and Value.isNumber(peek(1))) {
+                    const b = pop().asNumber();
+                    const a = pop().asNumber();
+                    push(Value.fromNumber(a + b));
+                } else {
                     runtimeError("Operands must be numbers.", .{});
                     return InterpretError.InterpretRuntimeError;
                 }
-                const b = pop().asNumber();
-                const a = pop().asNumber();
-                push(Value.fromNumber(a + b));
             },
             OpCode.op_subtract => {
                 if (!Value.isNumber(peek(0)) or !Value.isNumber(peek(1))) {
