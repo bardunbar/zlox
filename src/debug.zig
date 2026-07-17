@@ -25,11 +25,13 @@ pub fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
     switch (instruction) {
         OpCode.op_constant,
         OpCode.op_define_global,
+        OpCode.op_get_global,
         => {
             return constantInstruction(@tagName(instruction), chunk, offset);
         },
         OpCode.op_constant_long,
         OpCode.op_define_global_long,
+        OpCode.op_get_global_long,
         => {
             return longConstantInstruction(@tagName(instruction), chunk, offset);
         },

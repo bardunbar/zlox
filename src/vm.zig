@@ -195,6 +195,24 @@ fn run() InterpretError!void {
                 };
                 _ = pop();
             },
+            OpCode.op_get_global => {
+                const name = readConstant(.short).asString();
+                var value: Value = undefined;
+                if (!vm.globals.get(name, &value)) {
+                    runtimeError("Undefined variable '{s}'", .{name.chars});
+                    return InterpretError.InterpretRuntimeError;
+                }
+                push(value);
+            },
+            OpCode.op_get_global_long => {
+                const name = readConstant(.long).asString();
+                var value: Value = undefined;
+                if (!vm.globals.get(name, &value)) {
+                    runtimeError("Undefined variable '{s}'", .{name.chars});
+                    return InterpretError.InterpretRuntimeError;
+                }
+                push(value);
+            },
             OpCode.op_equal => {
                 const b = pop();
                 const a = pop();

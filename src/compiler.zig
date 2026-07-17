@@ -80,7 +80,7 @@ const rules = std.enums.directEnumArray(TokenType, ParseRule, 0, .{
     .greater_equal = .{ .infix = binary, .precedence = Precedence.comparison },
     .less = .{ .infix = binary, .precedence = Precedence.comparison },
     .less_equal = .{ .infix = binary, .precedence = Precedence.comparison },
-    .identifier = .{},
+    .identifier = .{ .prefix = variable },
     .string = .{ .prefix = string },
     .number = .{ .prefix = number },
     .k_and = .{},
@@ -247,6 +247,29 @@ fn string() !void {
     try emitConstant(Value.fromObject(object));
 }
 
+fn namedVariable(name: *Token) !void {
+    const index = try identifierConstant(name);
+
+    switch (index) {
+        .short => |i| {
+            try emitBytes(OpCode.op_get_global.asByte(), i);
+        },
+        .long => |i| {
+            const byte_low: u8 = @intCast(i & 0xF);
+            const byte_middle: u8 = @intCast((i & 0xF0) >> 4);
+            const byte_high: u8 = @intCast((i & 0xF00) >> 8);
+
+            try emitByteArray(&[_]u8{ OpCode.op_get_global_long.asByte(), byte_high, byte_middle, byte_low });
+        },
+        else => {
+            return error.ConstantIndexOverflow;
+        },
+    }
+}
+fn variable() !void {
+    try namedVariable(&parser.previous);
+}
+
 fn unary() !void {
     const token_kind = parser.previous.kind;
 
@@ -309,7 +332,9 @@ fn defineVariable(index: ConstantIndex) !void {
 
             try emitByteArray(&[_]u8{ OpCode.op_define_global_long.asByte(), byte_high, byte_middle, byte_low });
         },
-        else => unreachable,
+        else => {
+            return error.ConstantIndexOverflow;
+        },
     }
 }
 fn getRule(kind: TokenType) *const ParseRule {
