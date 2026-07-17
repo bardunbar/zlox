@@ -23,11 +23,15 @@ pub fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
     }
     const instruction: OpCode = @enumFromInt(chunk.code[offset]);
     switch (instruction) {
-        OpCode.op_constant => {
-            return constantInstruction(@tagName(OpCode.op_constant), chunk, offset);
+        OpCode.op_constant,
+        OpCode.op_define_global,
+        => {
+            return constantInstruction(@tagName(instruction), chunk, offset);
         },
-        OpCode.op_constant_long => {
-            return longConstantInstruction(@tagName(OpCode.op_constant_long), chunk, offset);
+        OpCode.op_constant_long,
+        OpCode.op_define_global_long,
+        => {
+            return longConstantInstruction(@tagName(instruction), chunk, offset);
         },
         OpCode.op_return,
         OpCode.op_negate,
@@ -42,6 +46,8 @@ pub fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
         OpCode.op_equal,
         OpCode.op_greater,
         OpCode.op_less,
+        OpCode.op_print,
+        OpCode.op_pop,
         => {
             return simpleInstruction(@tagName(instruction), offset);
         },

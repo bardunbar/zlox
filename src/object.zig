@@ -34,10 +34,21 @@ pub const Object = struct {
     }
 };
 
+pub fn hashString(key: []const u8) u32 {
+    var hash: u32 = 2166136261;
+
+    for (key) |char| {
+        hash ^= char;
+        hash *%= 16777619;
+    }
+
+    return hash;
+}
+
 pub const ObjectString = struct {
     object: Object,
-    //length: u32,
     chars: []const u8,
+    hash: u32,
 
     pub fn kind() ObjectType {
         return .obj_string;
@@ -57,6 +68,7 @@ pub const ObjectString = struct {
         new.object.kind = .obj_string;
         new.object.next = null;
         new.chars = try allocator.dupe(u8, slice);
+        new.hash = hashString(slice);
         return new;
     }
 
@@ -65,6 +77,7 @@ pub const ObjectString = struct {
         new.object.kind = .obj_string;
         new.object.next = null;
         new.chars = slice;
+        new.hash = hashString(slice);
         return new;
     }
 

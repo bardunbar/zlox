@@ -5,6 +5,7 @@ const InterpretError = vm.InterpretError;
 const chunk_mod = @import("chunk.zig");
 const Chunk = chunk_mod.Chunk;
 const OpCode = chunk_mod.OpCode;
+const ConstantIndex = chunk_mod.ConstantIndex;
 
 const scanner = @import("scanner.zig");
 const Token = scanner.Token;
@@ -111,9 +112,15 @@ pub fn compile(source: []const u8, chunk: *Chunk) InterpretError!void {
 
     advance();
 
-    expression();
+    //expression();
 
-    consume(TokenType.k_eof, "Expect end of expression.");
+    //consume(TokenType.k_eof, "Expect end of expression.");
+
+    while (!match(.k_eof)) {
+        declaration() catch |err| {
+            errorAtPrevious(@errorName(err));
+        };
+    }
 
     endCompiler() catch |err| {
         errorAtCurrent(@errorName(err));
@@ -144,6 +151,20 @@ fn consume(kind: TokenType, message: []const u8) void {
     errorAtCurrent(message);
 }
 
+fn check(kind: TokenType) bool {
+    return parser.current.kind == kind;
+}
+
+fn match(kind: TokenType) bool {
+    if (!check(kind)) {
+        return false;
+    }
+
+    advance();
+
+    return true;
+}
+
 fn emitByte(byte: u8) !void {
     try currentChunk().writeChunk(byte, parser.previous.line);
 }
@@ -160,7 +181,11 @@ fn emitByteArray(bytes: []const u8) !void {
 }
 
 fn emitReturn() !void {
-    try emitByte(OpCode.op_return.as_byte());
+    try emitByte(OpCode.op_return.asByte());
+}
+
+fn makeConstant(value: Value) !chunk_mod.ConstantIndex {
+    return try currentChunk().addConstant(value);
 }
 
 fn emitConstant(value: Value) !void {
@@ -183,25 +208,25 @@ fn binary() !void {
     parsePrecedence(@enumFromInt(@intFromEnum(rule.precedence) + 1));
 
     switch (operator_type) {
-        TokenType.bang_equal => try emitBytes(OpCode.op_equal.as_byte(), OpCode.op_not.as_byte()),
-        TokenType.equal_equal => try emitByte(OpCode.op_equal.as_byte()),
-        TokenType.greater => try emitByte(OpCode.op_greater.as_byte()),
-        TokenType.greater_equal => try emitBytes(OpCode.op_less.as_byte(), OpCode.op_not.as_byte()),
-        TokenType.less => try emitByte(OpCode.op_less.as_byte()),
-        TokenType.less_equal => try emitBytes(OpCode.op_greater.as_byte(), OpCode.op_not.as_byte()),
-        TokenType.plus => try emitByte(OpCode.op_add.as_byte()),
-        TokenType.minus => try emitByte(OpCode.op_subtract.as_byte()),
-        TokenType.star => try emitByte(OpCode.op_multiply.as_byte()),
-        TokenType.slash => try emitByte(OpCode.op_divide.as_byte()),
+        TokenType.bang_equal => try emitBytes(OpCode.op_equal.asByte(), OpCode.op_not.asByte()),
+        TokenType.equal_equal => try emitByte(OpCode.op_equal.asByte()),
+        TokenType.greater => try emitByte(OpCode.op_greater.asByte()),
+        TokenType.greater_equal => try emitBytes(OpCode.op_less.asByte(), OpCode.op_not.asByte()),
+        TokenType.less => try emitByte(OpCode.op_less.asByte()),
+        TokenType.less_equal => try emitBytes(OpCode.op_greater.asByte(), OpCode.op_not.asByte()),
+        TokenType.plus => try emitByte(OpCode.op_add.asByte()),
+        TokenType.minus => try emitByte(OpCode.op_subtract.asByte()),
+        TokenType.star => try emitByte(OpCode.op_multiply.asByte()),
+        TokenType.slash => try emitByte(OpCode.op_divide.asByte()),
         else => unreachable,
     }
 }
 
 fn literal() !void {
     switch (parser.previous.kind) {
-        TokenType.k_false => try emitByte(OpCode.op_false.as_byte()),
-        TokenType.k_nil => try emitByte(OpCode.op_nil.as_byte()),
-        TokenType.k_true => try emitByte(OpCode.op_true.as_byte()),
+        TokenType.k_false => try emitByte(OpCode.op_false.asByte()),
+        TokenType.k_nil => try emitByte(OpCode.op_nil.asByte()),
+        TokenType.k_true => try emitByte(OpCode.op_true.asByte()),
         else => unreachable,
     }
 }
@@ -228,8 +253,8 @@ fn unary() !void {
     parsePrecedence(Precedence.unary);
 
     switch (token_kind) {
-        TokenType.minus => try emitByte(OpCode.op_negate.as_byte()),
-        TokenType.bang => try emitByte(OpCode.op_not.as_byte()),
+        TokenType.minus => try emitByte(OpCode.op_negate.asByte()),
+        TokenType.bang => try emitByte(OpCode.op_not.asByte()),
         else => unreachable,
     }
 }
@@ -262,12 +287,96 @@ fn parsePrecedence(precedence: Precedence) void {
     }
 }
 
+fn identifierConstant(name: *Token) !ConstantIndex {
+    const object = try vm.manager().copy(name.data);
+    return makeConstant(Value.fromObject(object));
+}
+
+fn parseVariable(error_message: []const u8) !ConstantIndex {
+    consume(.identifier, error_message);
+    return try identifierConstant(&parser.previous);
+}
+
+fn defineVariable(index: ConstantIndex) !void {
+    switch (index) {
+        .short => |i| {
+            try emitBytes(OpCode.op_define_global.asByte(), i);
+        },
+        .long => |i| {
+            const byte_low: u8 = @intCast(i & 0xF);
+            const byte_middle: u8 = @intCast((i & 0xF0) >> 4);
+            const byte_high: u8 = @intCast((i & 0xF00) >> 8);
+
+            try emitByteArray(&[_]u8{ OpCode.op_define_global_long.asByte(), byte_high, byte_middle, byte_low });
+        },
+        else => unreachable,
+    }
+}
 fn getRule(kind: TokenType) *const ParseRule {
     return &rules[@as(usize, @intFromEnum(kind))];
 }
 
 fn expression() void {
     parsePrecedence(Precedence.assignment);
+}
+
+fn varDeclaration() !void {
+    // We need to get bytes that point towards a constant
+    const global = try parseVariable("Expect variable name.");
+
+    if (match(.equal)) {
+        expression();
+    } else {
+        try emitByte(OpCode.op_nil.asByte());
+    }
+
+    consume(.semicolon, "Expect ';' after variable declaration.");
+    try defineVariable(global);
+}
+
+fn printStatement() !void {
+    expression();
+    consume(.semicolon, "Expect ';' after value.");
+    try emitByte(OpCode.op_print.asByte());
+}
+
+fn expressionStatement() !void {
+    expression();
+    consume(.semicolon, "Expect ';' after value.");
+    try emitByte(OpCode.op_pop.asByte());
+}
+
+fn synchronize() void {
+    parser.panic_mode = false;
+
+    while (parser.current.kind != .k_eof) : (advance()) {
+        if (parser.previous.kind == .semicolon) {
+            return;
+        }
+
+        switch (parser.current.kind) {
+            .k_class, .k_fun, .k_var, .k_for, .k_if, .k_while, .k_print, .k_return => return,
+            else => {},
+        }
+    }
+}
+
+fn declaration() !void {
+    if (match(.k_var)) {
+        try varDeclaration();
+    } else {
+        try statement();
+    }
+
+    if (parser.panic_mode) synchronize();
+}
+
+fn statement() !void {
+    if (match(.k_print)) {
+        try printStatement();
+    } else {
+        try expressionStatement();
+    }
 }
 
 fn currentChunk() *Chunk {

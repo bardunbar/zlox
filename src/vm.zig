@@ -16,7 +16,7 @@ const ObjectString = object_mod.ObjectString;
 const compiler = @import("compiler.zig");
 
 const memory = @import("memory.zig");
-
+const Table = @import("table.zig");
 const common = @import("common.zig");
 
 var vm: VirtualMachine = undefined;
@@ -29,19 +29,22 @@ const VirtualMachine = struct {
     stack: [stack_max]Value,
     stack_top: usize,
     manager: memory.Manager,
+    globals: Table,
 
-    fn init(allocator: std.mem.Allocator) @This() {
+    fn init(allocator: std.mem.Allocator) !@This() {
         return .{
             .chunk = undefined,
             .ip = undefined,
             .stack = [_]Value{Value.fromNil()} ** stack_max,
             .stack_top = 0,
-            .manager = memory.Manager.init(allocator),
+            .manager = try memory.Manager.init(allocator),
+            .globals = try Table.init(allocator),
         };
     }
 
     fn deinit(self: *@This()) void {
         self.manager.deinit();
+        self.globals.deinit();
     }
 };
 
@@ -56,8 +59,8 @@ pub const InterpretResult = enum {
     interpret_runtime_error,
 };
 
-pub fn init(allocator: std.mem.Allocator) void {
-    vm = VirtualMachine.init(allocator);
+pub fn init(allocator: std.mem.Allocator) !void {
+    vm = try VirtualMachine.init(allocator);
     resetStack();
 }
 
@@ -156,7 +159,6 @@ fn run() InterpretError!void {
 
         switch (instruction) {
             OpCode.op_return => {
-                std.debug.print("result: {f}\n", .{pop()});
                 return;
             },
             OpCode.op_constant => {
@@ -173,6 +175,25 @@ fn run() InterpretError!void {
             },
             OpCode.op_false => {
                 push(Value.fromBool(false));
+            },
+            OpCode.op_pop => {
+                _ = pop();
+            },
+            OpCode.op_define_global => {
+                const name = readConstant(.short).asString();
+                _ = vm.globals.set(name, peek(0)) catch |err| {
+                    runtimeError("{s}", .{@errorName(err)});
+                    return InterpretError.InterpretRuntimeError;
+                };
+                _ = pop();
+            },
+            OpCode.op_define_global_long => {
+                const name = readConstant(.long).asString();
+                _ = vm.globals.set(name, peek(0)) catch |err| {
+                    runtimeError("{s}", .{@errorName(err)});
+                    return InterpretError.InterpretRuntimeError;
+                };
+                _ = pop();
             },
             OpCode.op_equal => {
                 const b = pop();
@@ -249,6 +270,9 @@ fn run() InterpretError!void {
             },
             OpCode.op_not => {
                 push(Value.fromBool(pop().isFalsey()));
+            },
+            OpCode.op_print => {
+                std.debug.print("{f}\n", .{pop()});
             }
         }
     }

@@ -21,7 +21,7 @@ pub fn main(init: std.process.Init) !void {
         std.log.info("arg: {s}", .{arg});
     }
 
-    vm.init(init.gpa);
+    try vm.init(init.gpa);
     defer vm.deinit();
 
     if (args.len == 1) {

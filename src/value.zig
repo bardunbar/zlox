@@ -86,7 +86,7 @@ pub const Value = union(ValueType) {
             ValueType.val_obj => {
                 const a = lhs.asObject().as(ObjectString);
                 const b = rhs.asObject().as(ObjectString);
-                return std.mem.eql(u8, a.chars, b.chars);
+                return a == b;
             },
         }
     }

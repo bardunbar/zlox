@@ -8,11 +8,38 @@ const Value = mod_value.Value;
 
 const ValueArray = Array(Value);
 
+pub const ConstantIndexTag = enum {
+    short,
+    long,
+    invalid,
+};
+
+pub const ConstantIndex = union(ConstantIndexTag) {
+    short: u8,
+    long: u24,
+    invalid,
+
+    pub fn init(index: usize) @This() {
+        if (index < std.math.maxInt(u8)) {
+            return .{
+                .short = @intCast(index),
+            };
+        } else if (index < std.math.maxInt(u24)) {
+            return .{ .long = @intCast(index) };
+        } else {
+            return .invalid;
+        }
+    }
+};
+
 pub const OpCode = enum(u8) {
     op_constant,
     op_nil,
     op_true,
     op_false,
+    op_pop,
+    op_define_global,
+    op_define_global_long,
     op_equal,
     op_greater,
     op_less,
@@ -23,9 +50,10 @@ pub const OpCode = enum(u8) {
     op_divide,
     op_not,
     op_negate,
+    op_print,
     op_return,
 
-    pub fn as_byte(self: @This()) u8 {
+    pub fn asByte(self: @This()) u8 {
         return @intFromEnum(self);
     }
 };
@@ -74,44 +102,39 @@ pub const Chunk = struct {
     pub fn writeConstant(self: *@This(), value: Value, line: u32) !void {
         const index = try addConstant(self, value);
 
-        // If the index fits in a u8 we can use a small constant
-        if (index < std.math.maxInt(u8)) {
-            const index_byte: u8 = @intCast(index);
-            try writeChunk(self, OpCode.op_constant.as_byte(), line);
-            try writeChunk(self, index_byte, line);
-        } else if (index < std.math.maxInt(u24)) { // Otherwise we have to use a large constant
-            const byte_low: u8 = @intCast(index & 0xF);
-            const byte_middle: u8 = @intCast((index & 0xF0) >> 4);
-            const byte_high: u8 = @intCast((index & 0xF00) >> 8);
+        switch (index) {
+            .short => |i| {
+                try writeChunk(self, OpCode.op_constant.asByte(), line);
+                try writeChunk(self, i, line);
+            },
+            .long => |i| {
+                const byte_low: u8 = @intCast(i & 0xF);
+                const byte_middle: u8 = @intCast((i & 0xF0) >> 4);
+                const byte_high: u8 = @intCast((i & 0xF00) >> 8);
 
-            try writeChunk(self, OpCode.op_constant_long.as_byte(), line);
-            try writeChunk(self, byte_high, line);
-            try writeChunk(self, byte_middle, line);
-            try writeChunk(self, byte_low, line);
-        } else {
-            return error.ContantIndexOverflow;
+                try writeChunk(self, OpCode.op_constant_long.asByte(), line);
+                try writeChunk(self, byte_high, line);
+                try writeChunk(self, byte_middle, line);
+                try writeChunk(self, byte_low, line);
+            },
+            .invalid => {
+                return error.ContantIndexOverflow;
+            }
         }
     }
 
-    pub fn writeLongConstant(self: *@This(), value: Value, line: u32) !void {
-        const index = try addConstant(self, value);
-
-        if (index < std.math.maxInt(u24)) {
-            const byte_low: u8 = @intCast(index & 0xF);
-            const byte_middle: u8 = @intCast((index & 0xF0) >> 4);
-            const byte_high: u8 = @intCast((index & 0xF00) >> 8);
-
-            try writeChunk(self, OpCode.op_constant_long.as_byte(), line);
-            try writeChunk(self, byte_high, line);
-            try writeChunk(self, byte_middle, line);
-            try writeChunk(self, byte_low, line);
-        } else {
-            return error.ContantIndexOverflow;
-        }
-    }
-
-    pub fn addConstant(self: *@This(), value: Value) !usize {
+    pub fn addConstant(self: *@This(), value: Value) !ConstantIndex {
         try self.constants.append(value);
-        return @intCast(self.constants.count - 1);
+        return ConstantIndex.init(self.constants.count - 1);
+    }
+
+    pub fn addLongConstant(self: *@This(), value: Value) !ConstantIndex {
+        try self.constants.append(value);
+        const index = self.constants.count - 1;
+        if (index < std.math.maxInt(u24)) {
+            return .{ .long = @intCast(index) };
+        } else {
+            return .invalid;
+        }
     }
 };
