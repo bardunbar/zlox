@@ -213,6 +213,19 @@ fn run() InterpretError!void {
                 }
                 push(value);
             },
+            OpCode.op_set_global => {
+                const name = readConstant(.short).asString();
+                // This function returns new if this is a new element, meaning we didn't just set it
+                if (vm.globals.set(name, peek(0)) catch |err| {
+                    runtimeError("{s}", .{@errorName(err)});
+                    return InterpretError.InterpretRuntimeError;
+                }) {
+                    _ = vm.globals.delete(name);
+                    runtimeError("Undefined variable '{s}'.", .{name.chars});
+                    return InterpretError.InterpretRuntimeError;
+                }
+            },
+            OpCode.op_set_global_long => {},
             OpCode.op_equal => {
                 const b = pop();
                 const a = pop();

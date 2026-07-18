@@ -52,7 +52,7 @@ const Precedence = enum {
     primary,
 };
 
-const ParseFn = *const fn () anyerror!void;
+const ParseFn = *const fn (can_assign: bool) anyerror!void;
 
 const ParseRule = struct {
     prefix: ?ParseFn = null,
@@ -202,7 +202,7 @@ fn endCompiler() !void {
     }
 }
 
-fn binary() !void {
+fn binary(_: bool) !void {
     const operator_type = parser.previous.kind;
     const rule = getRule(operator_type);
     parsePrecedence(@enumFromInt(@intFromEnum(rule.precedence) + 1));
@@ -222,7 +222,7 @@ fn binary() !void {
     }
 }
 
-fn literal() !void {
+fn literal(_: bool) !void {
     switch (parser.previous.kind) {
         TokenType.k_false => try emitByte(OpCode.op_false.asByte()),
         TokenType.k_nil => try emitByte(OpCode.op_nil.asByte()),
@@ -231,46 +231,65 @@ fn literal() !void {
     }
 }
 
-fn grouping() !void {
+fn grouping(_: bool) !void {
     expression();
     consume(TokenType.right_paren, "Expect ')' after expression.");
 }
 
-fn number() !void {
+fn number(_: bool) !void {
     const double = try std.fmt.parseFloat(f64, parser.previous.data);
 
     try emitConstant(Value.fromNumber(double));
 }
 
-fn string() !void {
+fn string(_: bool) !void {
     const object = try vm.manager().copy(parser.previous.data[1 .. parser.previous.data.len - 1]);
     try emitConstant(Value.fromObject(object));
 }
 
-fn namedVariable(name: *Token) !void {
+fn namedVariable(name: *Token, can_assign: bool) !void {
     const index = try identifierConstant(name);
 
-    switch (index) {
-        .short => |i| {
-            try emitBytes(OpCode.op_get_global.asByte(), i);
-        },
-        .long => |i| {
-            const byte_low: u8 = @intCast(i & 0xF);
-            const byte_middle: u8 = @intCast((i & 0xF0) >> 4);
-            const byte_high: u8 = @intCast((i & 0xF00) >> 8);
+    if (can_assign and match(.equal)) {
+        expression();
+        switch (index) {
+            .short => |i| {
+                try emitBytes(OpCode.op_set_global.asByte(), i);
+            },
+            .long => |i| {
+                const byte_low: u8 = @intCast(i & 0xF);
+                const byte_middle: u8 = @intCast((i & 0xF0) >> 4);
+                const byte_high: u8 = @intCast((i & 0xF00) >> 8);
 
-            try emitByteArray(&[_]u8{ OpCode.op_get_global_long.asByte(), byte_high, byte_middle, byte_low });
-        },
-        else => {
-            return error.ConstantIndexOverflow;
-        },
+                try emitByteArray(&[_]u8{ OpCode.op_set_global_long.asByte(), byte_high, byte_middle, byte_low });
+            },
+            else => {
+                return error.ConstantIndexOverflow;
+            },
+        }
+    } else {
+        switch (index) {
+            .short => |i| {
+                try emitBytes(OpCode.op_get_global.asByte(), i);
+            },
+            .long => |i| {
+                const byte_low: u8 = @intCast(i & 0xF);
+                const byte_middle: u8 = @intCast((i & 0xF0) >> 4);
+                const byte_high: u8 = @intCast((i & 0xF00) >> 8);
+
+                try emitByteArray(&[_]u8{ OpCode.op_get_global_long.asByte(), byte_high, byte_middle, byte_low });
+            },
+            else => {
+                return error.ConstantIndexOverflow;
+            },
+        }
     }
 }
-fn variable() !void {
-    try namedVariable(&parser.previous);
+fn variable(can_assign: bool) !void {
+    try namedVariable(&parser.previous, can_assign);
 }
 
-fn unary() !void {
+fn unary(_: bool) !void {
     const token_kind = parser.previous.kind;
 
     parsePrecedence(Precedence.unary);
@@ -286,9 +305,12 @@ fn parsePrecedence(precedence: Precedence) void {
     advance();
     // std.debug.print("Parsing Precedence: {s}\n", .{@tagName(parser.previous.kind)});
 
+    const precedence_value = @intFromEnum(precedence);
+    const can_assign = precedence_value <= @intFromEnum(Precedence.assignment);
+
     const prefix_option = getRule(parser.previous.kind).prefix;
     if (prefix_option) |prefix| {
-        prefix() catch |err| {
+        prefix(can_assign) catch |err| {
             errorAtPrevious(@errorName(err));
             return;
         };
@@ -297,16 +319,18 @@ fn parsePrecedence(precedence: Precedence) void {
         return;
     }
 
-    const precedence_value = @intFromEnum(precedence);
-
     while (precedence_value <= @intFromEnum(getRule(parser.current.kind).precedence)) {
         advance();
         const infix_option = getRule(parser.previous.kind).infix;
         if (infix_option) |infix| {
-            infix() catch |err| {
+            infix(can_assign) catch |err| {
                 errorAtPrevious(@errorName(err));
             };
         }
+    }
+
+    if (can_assign and match(.equal)) {
+        errorAtPrevious("Invalid assignment target.");
     }
 }
 

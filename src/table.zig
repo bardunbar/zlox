@@ -102,6 +102,8 @@ pub fn delete(self: *@This(), key: *ObjectString) bool {
 
     entry.key = null;
     entry.value = Value.fromBool(true);
+
+    return true;
 }
 
 pub fn insert(self: *@This(), other: Table) void {
