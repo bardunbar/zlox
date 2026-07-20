@@ -24,7 +24,7 @@ pub fn Array(comptime T: type) type {
             self.capacity = 0;
         }
 
-        pub fn append(self: *@This(), item: T) !void {
+        pub fn append(self: *@This(), item: T) error{OutOfMemory}!void {
             if (self.capacity < self.count + 1) {
                 self.capacity *= 2;
                 self.data = try self.allocator.realloc(self.data, self.capacity);

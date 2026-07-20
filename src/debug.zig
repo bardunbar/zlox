@@ -37,6 +37,11 @@ pub fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
         => {
             return longConstantInstruction(@tagName(instruction), chunk, offset);
         },
+        OpCode.op_get_local,
+        OpCode.op_set_local,
+        => {
+            return byteInstruction(@tagName(instruction), chunk, offset);
+        },
         OpCode.op_return,
         OpCode.op_negate,
         OpCode.op_add,
@@ -61,6 +66,12 @@ pub fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
 fn simpleInstruction(name: []const u8, offset: usize) usize {
     std.debug.print("{s}\n", .{name});
     return offset + 1;
+}
+
+fn byteInstruction(name: []const u8, chunk: Chunk, offset: usize) usize {
+    const slot = chunk.code[offset + 1];
+    std.debug.print("{s: <16} {:0>4}\n", .{ name, slot });
+    return offset + 2;
 }
 
 fn constantInstruction(name: []const u8, chunk: Chunk, offset: usize) usize {

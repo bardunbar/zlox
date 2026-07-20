@@ -38,6 +38,8 @@ pub const OpCode = enum(u8) {
     op_true,
     op_false,
     op_pop,
+    op_get_local,
+    op_set_local,
     op_define_global,
     op_define_global_long,
     op_get_global,
@@ -91,7 +93,7 @@ pub const Chunk = struct {
         self.capacity = 0;
     }
 
-    pub fn writeChunk(self: *@This(), byte: u8, line: u32) !void {
+    pub fn writeChunk(self: *@This(), byte: u8, line: u32) error{OutOfMemory}!void {
         if (self.capacity < self.count + 1) {
             self.capacity *= 2;
             self.code = try self.allocator.realloc(self.code, self.capacity);
@@ -103,7 +105,7 @@ pub const Chunk = struct {
         self.count += 1;
     }
 
-    pub fn writeConstant(self: *@This(), value: Value, line: u32) !void {
+    pub fn writeConstant(self: *@This(), value: Value, line: u32) error{ OutOfMemory, ConstantIndexOverflow }!void {
         const index = try addConstant(self, value);
 
         switch (index) {
@@ -122,17 +124,17 @@ pub const Chunk = struct {
                 try writeChunk(self, byte_low, line);
             },
             .invalid => {
-                return error.ContantIndexOverflow;
+                return error.ConstantIndexOverflow;
             }
         }
     }
 
-    pub fn addConstant(self: *@This(), value: Value) !ConstantIndex {
+    pub fn addConstant(self: *@This(), value: Value) error{OutOfMemory}!ConstantIndex {
         try self.constants.append(value);
         return ConstantIndex.init(self.constants.count - 1);
     }
 
-    pub fn addLongConstant(self: *@This(), value: Value) !ConstantIndex {
+    pub fn addLongConstant(self: *@This(), value: Value) error{OutOfMemory}!ConstantIndex {
         try self.constants.append(value);
         const index = self.constants.count - 1;
         if (index < std.math.maxInt(u24)) {

@@ -179,6 +179,14 @@ fn run() InterpretError!void {
             OpCode.op_pop => {
                 _ = pop();
             },
+            OpCode.op_get_local => {
+                const slot = readByte();
+                push(vm.stack[slot]);
+            },
+            OpCode.op_set_local => {
+                const slot = readByte();
+                vm.stack[slot] = peek(0);
+            },
             OpCode.op_define_global => {
                 const name = readConstant(.short).asString();
                 _ = vm.globals.set(name, peek(0)) catch |err| {

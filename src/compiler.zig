@@ -30,6 +30,11 @@ var parser: Parser = .{
     .panic_mode = false,
 };
 var compiling_chunk: *Chunk = undefined;
+var compiler: Compiler = .{
+    .locals = undefined,
+    .local_count = 0,
+    .scope_depth = 0,
+};
 
 const Parser = struct {
     current: Token,
@@ -58,6 +63,18 @@ const ParseRule = struct {
     prefix: ?ParseFn = null,
     infix: ?ParseFn = null,
     precedence: Precedence = Precedence.none,
+};
+
+const uninitialized_local_depth = std.math.maxInt(u32);
+const Local = struct {
+    name: Token,
+    depth: u32,
+};
+
+const Compiler = struct {
+    locals: [std.math.maxInt(u8)]Local,
+    local_count: u32,
+    scope_depth: u32,
 };
 
 const rules = std.enums.directEnumArray(TokenType, ParseRule, 0, .{
@@ -112,10 +129,6 @@ pub fn compile(source: []const u8, chunk: *Chunk) InterpretError!void {
 
     advance();
 
-    //expression();
-
-    //consume(TokenType.k_eof, "Expect end of expression.");
-
     while (!match(.k_eof)) {
         declaration() catch |err| {
             errorAtPrevious(@errorName(err));
@@ -165,30 +178,30 @@ fn match(kind: TokenType) bool {
     return true;
 }
 
-fn emitByte(byte: u8) !void {
+fn emitByte(byte: u8) error{OutOfMemory}!void {
     try currentChunk().writeChunk(byte, parser.previous.line);
 }
 
-fn emitBytes(a: u8, b: u8) !void {
+fn emitBytes(a: u8, b: u8) error{OutOfMemory}!void {
     try emitByte(a);
     try emitByte(b);
 }
 
-fn emitByteArray(bytes: []const u8) !void {
+fn emitByteArray(bytes: []const u8) error{OutOfMemory}!void {
     for (bytes) |byte| {
         try emitByte(byte);
     }
 }
 
-fn emitReturn() !void {
+fn emitReturn() error{OutOfMemory}!void {
     try emitByte(OpCode.op_return.asByte());
 }
 
-fn makeConstant(value: Value) !chunk_mod.ConstantIndex {
+fn makeConstant(value: Value) error{OutOfMemory}!chunk_mod.ConstantIndex {
     return try currentChunk().addConstant(value);
 }
 
-fn emitConstant(value: Value) !void {
+fn emitConstant(value: Value) error{ OutOfMemory, ConstantIndexOverflow }!void {
     try currentChunk().writeConstant(value, parser.previous.line);
 }
 
@@ -199,6 +212,23 @@ fn endCompiler() !void {
         if (!parser.had_error) {
             debug.disassembleChunk(currentChunk().*, "code");
         }
+    }
+}
+
+fn beginScope() void {
+    compiler.scope_depth += 1;
+
+    if (compiler.scope_depth == std.math.maxInt(u32)) {
+        errorAtPrevious("Reached the maximum scope depth.");
+    }
+}
+
+fn endScope() error{OutOfMemory}!void {
+    compiler.scope_depth -= 1;
+
+    while (compiler.local_count > 0 and compiler.locals[compiler.local_count - 1].depth > compiler.scope_depth) {
+        try emitByte(OpCode.op_pop.asByte());
+        compiler.local_count -= 1;
     }
 }
 
@@ -248,20 +278,43 @@ fn string(_: bool) !void {
 }
 
 fn namedVariable(name: *Token, can_assign: bool) !void {
-    const index = try identifierConstant(name);
+    var index = resolveLocal(compiler, name);
+
+    var op_get_short: u8 = undefined;
+    var op_get_long: u8 = undefined;
+    var op_set_short: u8 = undefined;
+    var op_set_long: u8 = undefined;
+
+    switch (index) {
+        .short => {
+            op_get_short = OpCode.op_get_local.asByte();
+            op_set_short = OpCode.op_set_local.asByte();
+        },
+        .long => {
+            // You should not be able to resolve a long local, not yet anyway since there is a cap on 256 locals
+            unreachable;
+        },
+        .invalid => {
+            index = try identifierConstant(name);
+            op_get_short = OpCode.op_get_global.asByte();
+            op_get_long = OpCode.op_get_global_long.asByte();
+            op_set_short = OpCode.op_set_global.asByte();
+            op_set_long = OpCode.op_set_global_long.asByte();
+        },
+    }
 
     if (can_assign and match(.equal)) {
         expression();
         switch (index) {
             .short => |i| {
-                try emitBytes(OpCode.op_set_global.asByte(), i);
+                try emitBytes(op_set_short, i);
             },
             .long => |i| {
                 const byte_low: u8 = @intCast(i & 0xF);
                 const byte_middle: u8 = @intCast((i & 0xF0) >> 4);
                 const byte_high: u8 = @intCast((i & 0xF00) >> 8);
 
-                try emitByteArray(&[_]u8{ OpCode.op_set_global_long.asByte(), byte_high, byte_middle, byte_low });
+                try emitByteArray(&[_]u8{ op_set_long, byte_high, byte_middle, byte_low });
             },
             else => {
                 return error.ConstantIndexOverflow;
@@ -270,14 +323,14 @@ fn namedVariable(name: *Token, can_assign: bool) !void {
     } else {
         switch (index) {
             .short => |i| {
-                try emitBytes(OpCode.op_get_global.asByte(), i);
+                try emitBytes(op_get_short, i);
             },
             .long => |i| {
                 const byte_low: u8 = @intCast(i & 0xF);
                 const byte_middle: u8 = @intCast((i & 0xF0) >> 4);
                 const byte_high: u8 = @intCast((i & 0xF00) >> 8);
 
-                try emitByteArray(&[_]u8{ OpCode.op_get_global_long.asByte(), byte_high, byte_middle, byte_low });
+                try emitByteArray(&[_]u8{ op_get_long, byte_high, byte_middle, byte_low });
             },
             else => {
                 return error.ConstantIndexOverflow;
@@ -339,12 +392,84 @@ fn identifierConstant(name: *Token) !ConstantIndex {
     return makeConstant(Value.fromObject(object));
 }
 
+fn identifiersEqual(a: Token, b: Token) bool {
+    return std.mem.eql(u8, a.data, b.data);
+}
+
+fn resolveLocal(comp: Compiler, name: *Token) ConstantIndex {
+    var idx = comp.local_count;
+    while (idx > 0) {
+        idx -= 1;
+
+        const local = &comp.locals[idx];
+        if (identifiersEqual(name.*, local.name)) {
+            if (local.depth == uninitialized_local_depth) {
+                errorAtPrevious("Can't read local variable in its own initializer.");
+            }
+            return ConstantIndex.init(idx);
+        }
+    }
+
+    return .invalid;
+}
+
+fn addLocal(name: Token) void {
+    if (compiler.local_count >= std.math.maxInt(u8)) {
+        errorAtPrevious("Too many local variables in scope.");
+        return;
+    }
+
+    var local = &compiler.locals[compiler.local_count];
+    compiler.local_count += 1;
+
+    local.name = name;
+    local.depth = uninitialized_local_depth; //compiler.scope_depth;
+}
+
+fn declareVariable() void {
+    if (compiler.scope_depth == 0) {
+        return;
+    }
+
+    const name = parser.previous;
+
+    var idx = compiler.local_count;
+    while (idx > 0) {
+        idx -= 1;
+        const local = &compiler.locals[idx];
+        if (local.depth != std.math.maxInt(u32) and local.depth < compiler.scope_depth) {
+            break;
+        }
+
+        if (identifiersEqual(name, local.name)) {
+            errorAtPrevious("Already a variable with name in this scope.");
+        }
+    }
+
+    addLocal(name);
+}
+
 fn parseVariable(error_message: []const u8) !ConstantIndex {
     consume(.identifier, error_message);
+
+    declareVariable();
+    if (compiler.scope_depth > 0) {
+        return .invalid;
+    }
+
     return try identifierConstant(&parser.previous);
 }
 
-fn defineVariable(index: ConstantIndex) !void {
+fn markInitialized() void {
+    compiler.locals[compiler.local_count - 1].depth = compiler.scope_depth;
+}
+
+fn defineVariable(index: ConstantIndex) error{ OutOfMemory, ConstantIndexOverflow }!void {
+    if (compiler.scope_depth > 0) {
+        markInitialized();
+        return;
+    }
+
     switch (index) {
         .short => |i| {
             try emitBytes(OpCode.op_define_global.asByte(), i);
@@ -356,7 +481,7 @@ fn defineVariable(index: ConstantIndex) !void {
 
             try emitByteArray(&[_]u8{ OpCode.op_define_global_long.asByte(), byte_high, byte_middle, byte_low });
         },
-        else => {
+        .invalid => {
             return error.ConstantIndexOverflow;
         },
     }
@@ -369,7 +494,15 @@ fn expression() void {
     parsePrecedence(Precedence.assignment);
 }
 
-fn varDeclaration() !void {
+fn block() !void {
+    while (!check(.right_brace) and !check(.k_eof)) {
+        try declaration();
+    }
+
+    consume(.right_brace, "Expect '}' after block.");
+}
+
+fn varDeclaration() error{ OutOfMemory, ConstantIndexOverflow }!void {
     // We need to get bytes that point towards a constant
     const global = try parseVariable("Expect variable name.");
 
@@ -410,7 +543,7 @@ fn synchronize() void {
     }
 }
 
-fn declaration() !void {
+fn declaration() error{ OutOfMemory, ConstantIndexOverflow }!void {
     if (match(.k_var)) {
         try varDeclaration();
     } else {
@@ -423,6 +556,10 @@ fn declaration() !void {
 fn statement() !void {
     if (match(.k_print)) {
         try printStatement();
+    } else if (match(.left_brace)) {
+        beginScope();
+        try block();
+        try endScope();
     } else {
         try expressionStatement();
     }
